@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation Template to launch a Jenkins Server on EC2
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+    Description: EC2 instance type for the Jenkins server
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+
+  SSHLocation:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: The IP address range that can SSH into the instance
+
+Resources:
+  JenkinsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH and HTTP access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+
+  JenkinsInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref JenkinsSecurityGroup
+      ImageId: ami-0c55b159cbfafe1f0 # Amazon Linux 2 AMI (HVM), SSD Volume Type
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y java-1.8.0-openjdk-devel
+          wget -O /etc/yum.repos.d/jenkins.repo http://pkg.jenkins-ci.org/redhat/jenkins.repo
+          rpm --import https://pkg.jenkins.io/redhat/jenkins.io.key
+          yum install -y jenkins
+          systemctl enable jenkins
+          systemctl start jenkins
+          # Allow Jenkins to listen on port 8080
+          sed -i 's/JENKINS_PORT="8080"/JENKINS_PORT="8080"/' /etc/sysconfig/jenkins
+          systemctl restart jenkins
+
+Outputs:
+  JenkinsURL:
+    Description: URL for the Jenkins server
+    Value: !Sub
+      - http://${JenkinsInstance.PublicDnsName}:8080
+    Export:
+      Name: JenkinsURL
